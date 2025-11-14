@@ -1,0 +1,95 @@
+==================================
+Flow of app.py - Persistent RAG Chat
+==================================
+
+## 1. Core Concepts
+
+The application is a multi-session, persistent RAG (Retrieval-Augmented Generation) chat interface built with Streamlit. Its key features are:
+
+- **Persistence**: Chat history is saved in the user's browser (in both Local Storage and Cookies) and is reloaded when they revisit the app.
+- **Multi-Session**: Users can create multiple, separate chat sessions and switch between them using a dropdown in the sidebar.
+- **RAG Backend**: It uses a local LanceDB vector database and LangChain to answer questions based on ingested data.
+- **Browser Communication**: It uses the `streamlit-js-eval` library to bridge the gap between Python and the browser's JavaScript environment, enabling access to storage.
+
+## 2. Application Startup and Session Loading Flow
+
+The startup sequence is crucial for persistence and is designed to handle the asynchronous nature of communication between Streamlit and the browser.
+
+**Text-Based Flow Diagram:**
+
+```
+[ User opens/revisits App ]
+           |
+           v
+      [ main() ]
+           |
+           v
+  < Is `st.session_state.sessions` initialized? > --YES--+--> [ Proceed to Render UI ]
+           |
+          NO
+           |
+           v
+[ 1. Call load_cache() ]
+   (Sends a request for data to the browser's JavaScript)
+           |
+           v
+< [ 2. Did load_cache() return data immediately? ] >
+   |         |
+  NO (Most Common)  YES (Rare)
+   |         |
+   v         v
+[ Show "Loading..." & STOP ]   [ 3. Initialize `st.session_state` with data ]
+   |
+   |
+(Browser JS sends data back, Streamlit triggers a script rerun)
+   |
+   +------> [ RERUN: main() is called again ]
+                     |
+                     v
+           < Is `st.session_state.sessions` initialized? > --NO--+
+                     |
+                    YES (from previous step)
+                     |
+                     v
+           [ 3. Initialize `st.session_state` with data from JS ]
+                     |
+                     v
+           [ 4. Select Most Recent Session as Active ]
+                     |
+                     v
+           [ Proceed to Render UI ]
+```
+
+**Description of the Flow:**
+
+1.  **`main()` Entrypoint**: When the app loads, `main()` is called.
+2.  **`load_cache()` Trigger**: The first thing it does is call `load_cache()`. This executes JavaScript to read the `chat_sessions` data from the browser's Local Storage or Cookies.
+3.  **Asynchronous Wait**: This browser communication is asynchronous. On the first script run, `load_cache()` returns `None` because the data hasn't arrived back from the browser yet. The app detects this, shows a "Loading..." spinner, and stops further execution.
+4.  **Rerun with Data**: When the browser sends the data back, Streamlit automatically reruns the script. This time, the data from `load_cache()` is available within `st.session_state`.
+5.  **State Initialization**: The app now initializes `st.session_state.sessions` by parsing the loaded JSON data.
+6.  **Active Session**: It sets the most recent session (by sorted key name) as the `active_session_id`.
+7.  **UI Rendering**: Finally, with the state fully initialized, it calls `sidebar()` and `chat_interface()` to draw the user interface.
+
+
+## 3. User Interaction Flow
+
+Once the app is loaded, user interactions follow a clear pattern:
+
+**A) Sending a Chat Message:**
+
+1.  User types in the `st.chat_input` box and hits Enter.
+2.  The new message is appended to the message list of the current `active_session_id` in `st.session_state.sessions`.
+3.  The UI is updated to show the user's new message.
+4.  The `qa_chain.invoke()` function is called with the user's prompt.
+5.  While the RAG chain is working, a "Thinking..." spinner is shown.
+6.  The assistant's response is received and appended to the session's message list.
+7.  The UI is updated to show the assistant's response.
+8.  Crucially, `save_cache()` is called, which executes JavaScript to save the entire updated `sessions` object back to the browser's Local Storage and Cookies.
+
+**B) Managing Sessions (in `sidebar()`):**
+
+- **Switching Session**: When a user selects a different session from the `st.selectbox`, the `st.session_state.active_session_id` is updated, and `st.rerun()` is called to redraw the chat interface with the selected session's messages.
+
+- **New Session**: Clicking `+ New Session` creates a new, empty list in the `st.session_state.sessions` dictionary with a timestamp-based ID, sets it as the active session, calls `save_cache()`, and then `st.rerun()` to show the new blank chat interface.
+
+- **Delete Session**: Clicking `🗑️ Delete Current Session` removes the current session from `st.session_state.sessions`, selects another session to be active (or creates a new one if it was the last), calls `save_cache()`, and `st.rerun()`s.

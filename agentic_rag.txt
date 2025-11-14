@@ -1,0 +1,168 @@
+This document provides a detailed explanation of the `agentic_rag.py` script, including its functions, methods, and overall workflow.
+
+## Function and Method Explanations
+
+### `set_llm(new_llm)`
+- **Purpose:** Dynamically updates the global Language Model (LLM) instance.
+- **Details:** This function is crucial for allowing the LLM to be changed at runtime. It takes a new LLM object as input and updates the global `llm` variable. Consequently, it also updates the LLM used in the `_decompose_chain` and `_synthesize_chain` to ensure all parts of the system use the same model.
+
+### `is_gibberish(text: str) -> bool`
+- **Purpose:** To detect and filter out nonsensical or random user inputs.
+- **Details:** It employs a series of checks to determine if a string is gibberish:
+    - Returns `True` if the text is empty or has fewer than 3 characters (after stripping whitespace).
+    - Calculates the ratio of alphabetic characters to the total length. If it's less than 40%, it's considered gibberish.
+    - If the input is a single word with fewer than 4 letters, it's flagged as gibberish.
+- **Returns:** `True` if the text is likely gibberish, `False` otherwise.
+
+### `polite_fallback()`
+- **Purpose:** Provides a user-friendly, default response when the agent cannot answer a question.
+- **Details:** This function returns a simple, polite string indicating that the model does not have information on the requested topic.
+
+### `beautify_response(text: str) -> str`
+- **Purpose:** To format the raw output from the LLM into a more readable and aesthetically pleasing format.
+- **Details:** It processes the text line by line:
+    - Replaces lines containing only asterisks (`*`) with a separator (`---`).
+    - Converts lines starting with `* ` to markdown-style list items (`- `).
+    - Strips leading/trailing whitespace from all other lines.
+- **Returns:** A clean, formatted string.
+
+### `extract_clean_text(docs: list) -> str`
+- **Purpose:** To consolidate and clean the text content from a list of retrieved documents.
+- **Details:** It iterates through a list of `Document` objects, extracts the `page_content`, removes extraneous characters like the UTF-8 BOM (`\ufeff`), and joins the cleaned text from all documents into a single string. To prevent excessively long context, it truncates the combined text if it exceeds `MAX_CHARS_FOR_TEXT_EXTRACTION`.
+
+### `decompose_query(query: str) -> list[str]`
+- **Purpose:** Breaks down a complex user query into a series of simpler, manageable sub-questions.
+- **Details:** It uses a dedicated LLM chain (`_decompose_chain`) which is prompted to analyze the user's query and split it into logical sub-questions. This is the first step in the "Agentic" approach, allowing the system to tackle complex problems step-by-step.
+- **Returns:** A list of sub-question strings.
+
+### `synthesize_answer(query: str, intermediate_answers: list[str]) -> str`
+- **Purpose:** To combine the answers to the sub-questions into a single, coherent final answer.
+- **Details:** After the system has generated answers for each sub-question, this function uses another LLM chain (`_synthesize_chain`). It provides the original query and the list of intermediate answers to the LLM, which is prompted to synthesize them into a final, concise response.
+- **Returns:** The synthesized final answer string.
+
+### `setup_llm(api_key: str)`
+- **Purpose:** Initializes the connection to the Anthropic LLM service.
+- **Details:** This function takes an API key, sets it on the global `llm` instance (`ChatAnthropic`), and prepares it for use.
+
+### `setup_retriever()`
+- **Purpose:** To configure and initialize the document retriever.
+- **Details:** This function is responsible for setting up the connection to the vector database:
+    1. It loads the `HuggingFaceEmbeddings` model specified in the config.
+    2. It connects to the LanceDB vector store located at `LANCEDB_FOLDER`.
+    3. It verifies that the required table (`rag_table`) exists.
+    4. It creates a `LanceDB` vectorstore object and then converts it into a retriever object, configured with parameters like `k` (number of documents to retrieve) and `score_threshold` from the config.
+- **Returns:** A configured retriever object ready to fetch documents.
+
+### `main()`
+- **Purpose:** The main entry point and control loop for the agentic RAG chat application.
+- **Details:** This function orchestrates the entire process:
+    1. **Initialization:** Loads environment variables (like the `ANTHROPIC_API_KEY`), and calls `setup_llm()` and `setup_retriever()`.
+    2. **QA Chain:** Creates the primary `RetrievalQA` chain, which links the LLM and the retriever. This chain is used to answer the individual sub-questions.
+    3. **Chat Loop:** Enters an infinite loop to continuously accept user input.
+    4. **Input Handling:**
+        - Handles `exit` or `quit` commands.
+        - Implements a special `remember this:` command to save user-provided information to a text file for future context.
+        - Uses `is_gibberish()` to filter out invalid inputs.
+    5. **Agentic Logic Execution:**
+        - For a valid question, it first calls `decompose_query()`.
+        - It then iterates through the `sub_questions`, passing each one to the `qa_chain` to get an `intermediate_answer`.
+        - If there was more than one sub-question, it calls `synthesize_answer()` to create the final response. Otherwise, it uses the single intermediate answer directly.
+    6. **Output:**
+        - Prints the `beautify_response()` formatted final answer.
+        - Displays the unique source documents that were used to generate the answer.
+    7. **Error Handling:** A `try...except` block catches and prints any errors that occur during the process.
+
+## Code Workflow Diagram
+
+This diagram illustrates the flow of control and data through the `agentic_rag.py` script.
+
+```
+[Start]
+   |
+   v
+[main() function starts]
+   |
+   v
+[Load environment variables (.env)]
+   |
+   v
+[Get ANTHROPIC_API_KEY] --> (if not found) --> [Raise ValueError]
+   |
+   v
+[setup_llm(api_key)]
+   |
+   v
+[setup_retriever()] --> (if 'rag_table' not found) --> [Raise ValueError]
+   |
+   v
+[Create RetrievalQA chain (qa_chain)]
+   |
+   v
+[Print "Agentic RAG Chat ready!"]
+   |
+   v
+[Start 'while True' loop for user input]
+   |
+   v
+[Get user input: question]
+   |
+   +--------------------------------+
+   |                                |
+[if question is 'exit' or 'quit']  [if question starts with "remember this"]
+   |                                |
+   v                                v
+[Print "Goodbye!" and break loop]  [Append to "prompt info doc.txt" and continue loop]
+   |
+[if question is empty or gibberish]
+   |
+   v
+[Continue or print fallback and continue loop]
+   |
+   v
+[try-except block for error handling]
+   |
+   v
+[decompose_query(question)] -> [Returns sub_questions]
+   |
+   v
+[Loop through each sub_question]
+   |
+   v
+[qa_chain.invoke(sub_question)] -> [Returns result (answer and source documents)]
+   |
+   v
+[Append result to intermediate_answers and all_source_documents]
+   |
+   v
+[End of sub_question loop]
+   |
+   v
+[if more than one intermediate_answer]
+   |
+   +--------------------------------+
+   |                                |
+[synthesize_answer(question, ...)] [final_answer = intermediate_answers[0]]
+   |                                |
+   +--------------------------------+
+   |
+   v
+[if final_answer is empty]
+   |
+   v
+[Print polite_fallback() and continue loop]
+   |
+   v
+[beautify_response(final_answer)]
+   |
+   v
+[Print beautified final_answer]
+   |
+   v
+[Print unique source documents]
+   |
+   v
+[End of 'while True' loop]
+   |
+   v
+[End]
+```

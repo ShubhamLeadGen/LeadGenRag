@@ -1,0 +1,45 @@
+This document explains how the RAG project is configured to handle tabular data from various sources. The goal is to preserve the structure of the tables so that the language model can effectively understand and answer questions about them.
+
+The core strategy is to convert all tables into a clean Markdown format before they are processed by the embedding model.
+
+---
+### How It Works: A Step-by-Step Guide
+
+1.  **File Detection:** The `ingest.py` script scans for files in the local `data` directory and the configured Google Drive folder.
+
+2.  **Table Conversion:** The script has custom logic to handle different file types that may contain tables:
+
+    *   **Local `.csv` Files:**
+        *   When a `.csv` file is found, it is read using the `pandas` library into a DataFrame.
+        *   The entire DataFrame is then converted into a single Markdown table string.
+
+    *   **Local `.docx` Files:**
+        *   When a `.docx` file is found, it is processed by the `unstructured` library's `partition_docx` function.
+        *   This function breaks the document into elements (e.g., paragraphs, tables).
+        *   If an element is a table, it is converted into a Markdown table string. Other elements (like plain text) are kept as they are.
+        *   All the processed elements are then joined together to form the final document content.
+
+    *   **Google Sheets:**
+        *   The script uses the Google Drive API to detect and export Google Sheets as CSV data.
+        *   This CSV data is then parsed with `pandas` and converted into a Markdown table string, just like a local `.csv` file.
+
+    *   **Google Docs:**
+        *   The script uses the Google Drive API to detect and export Google Docs as `.docx` files.
+        *   These exported `.docx` files are then processed using the same logic as local `.docx` files, ensuring that any tables within them are correctly identified and converted to Markdown.
+
+3.  **Chunking:**
+    *   The resulting text content (which may contain large Markdown tables) is split into chunks.
+    *   The chunk size is set to 2000 characters to make it more likely that entire tables are kept within a single chunk, preserving their context.
+
+4.  **Embedding:**
+    *   The final text chunks (including the Markdown tables) are passed to the embedding model (`BAAI/bge-large-en-v1.5`).
+    *   This powerful model is capable of understanding the structure of the Markdown text and creates a vector embedding that represents the full meaning of the table.
+
+5.  **Retrieval:**
+    *   When you ask a question, it is converted into a vector by the same model.
+    *   The system then finds the most similar vectors in the database. Because the table's vector represents its full content and structure, the system can accurately retrieve the correct table to answer your question.
+
+---
+### Summary
+
+By converting all tables into a structured Markdown format, we allow a powerful, general-purpose text embedding model to effectively understand and reason about your tabular data, regardless of whether it comes from a CSV, DOCX, Google Sheet, or Google Doc.

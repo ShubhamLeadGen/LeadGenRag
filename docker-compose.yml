@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  raghf-app:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./lancedb:/app/lancedb
+      - ./.env:/app/.env

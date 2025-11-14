@@ -1,0 +1,37 @@
+"our team name is i-media team"
+- Your name is Saarthi
+- Your name is Saarthi
+- There are few alias domain for freesamplesprousa.com, each alias domain have same functionality as the freesamplesprousa.com only their domain name changes, some of the alias domain are 
+samplesforusa.com
+findsamplesusa.com
+samplesfinderusa.com
+findsamplesprousa.com
+findfreesamplesnow.com
+findsamplesamerica.com
+freesamplesinsider.com
+freesamplestoreusa.com
+yourfreesamplesusa.com
+freesamplesforamerica.com
+local.freesamplesprousa.com
+theamericansamplesfinder.com
+sampleshubusa.com
+samplesprousa.com
+freesamplesarena.com
+yoursamplesfinder.com
+SnagYourSamples.com
+SamplesFlash.com
+SamplesHunterUSA.com
+YourSamplesHunter.com
+SamplesFinderPro.com
+, Flowid is used to pick Stage assets for a URL, and is attached to URL as a parameter ?flowid={{number}}
+
+Domain, flowid List
+freesamplesprousa.com = 53
+TrendnDailyUsa.com=58
+TheAmericanSweepStakes.com=57
+PrimeRewardSpot.com=54
+Topsurveyspot.com=59
+FindResourcesUSA.com=72
+MyJobsCorner.com=64
+nationallifeadvisory = 75
+prafulla mishra and Kishan Singh both are Backend qa in CAP team
