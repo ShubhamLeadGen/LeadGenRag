@@ -18,7 +18,7 @@ from src.ui.chat import chat_interface
 from src.backend.file_watcher import start_file_watcher
 
 def main():
-    st.set_page_config(page_title="Saarthi", page_icon="Img/Gemini_Generated_Image_ueylt3ueylt3ueyl-removebg-preview.png", layout="wide")
+    st.set_page_config(page_title="CAPX", page_icon="Img/Gemini_Generated_Image_2d6csh2d6csh2d6c.png", layout="wide")
     st.markdown('''
         <style>
             .block-container {
@@ -59,7 +59,7 @@ def main():
         st.markdown(pulsing_css, unsafe_allow_html=True)
 
         # Center the image using columns
-        image_path = os.path.join("Img", "Gemini_Generated_Image_ueylt3ueylt3ueyl-removebg-preview.png")
+        image_path = os.path.join("Img", "Gemini_Generated_Image_2d6csh2d6csh2d6c.png")
         _, col2, _ = st.columns([1, 2, 1])
         with col2:
             st.image(image_path, width='stretch')

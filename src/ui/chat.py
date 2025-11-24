@@ -8,7 +8,7 @@ from src.backend.remember_storage import add_to_remember_user_data_storage, find
 from src.utils import beautify_response
 
 def chat_interface(qa_chain, llm):
-    st.title("Saarthi")
+    st.title("CAPX")
 
     messages = st.session_state.sessions.get(st.session_state.active_session_id, [])
 
