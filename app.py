@@ -101,11 +101,56 @@ def main():
         cached_data = None
 
     # Check if the session state has been initialized.
+    # Merge Local Storage sessions into session_state once, preserving non-empty histories.
+    if not st.session_state.get("sessions_auto_merged", False):
+        if cached_data and cached_data != "CACHE_EMPTY":
+            try:
+                parsed = json.loads(cached_data)
+                if isinstance(parsed, dict):
+                    # Ensure sessions dict exists
+                    if 'sessions' not in st.session_state:
+                        st.session_state.sessions = {}
+                    for k, v in parsed.items():
+                        try:
+                            inc_len = len(v) if isinstance(v, list) else 0
+                        except Exception:
+                            inc_len = 0
+                        exist = st.session_state.sessions.get(k)
+                        try:
+                            exist_len = len(exist) if isinstance(exist, list) else 0
+                        except Exception:
+                            exist_len = 0
+
+                        # If incoming is empty but existing has messages, keep existing
+                        if inc_len == 0 and exist_len > 0:
+                            continue
+                        st.session_state.sessions[k] = v
+                    st.session_state.sessions_auto_merged = True
+            except Exception:
+                st.session_state.sessions_auto_merged = True
+
     if 'sessions' not in st.session_state:
         # If the JS hasn't populated `cached_data` yet, proceed with an empty sessions dict
-        # so the chat UI is visible. If the client later returns data, it can overwrite this.
+        # so the chat UI is visible. Provide a visible button to allow the user to
+        # explicitly load saved sessions from browser localStorage when available.
         if cached_data is None:
             st.session_state.sessions = {}
+            st.sidebar.info("Saved sessions not loaded from browser. Click 'Load saved sessions' to restore previous chats.")
+            if st.sidebar.button("Load saved sessions"):
+                # Try to load again; this will execute JS in the browser and return any stored sessions.
+                try:
+                    new_data = load_cache()
+                except Exception:
+                    new_data = None
+
+                if new_data and new_data != "CACHE_EMPTY":
+                    try:
+                        st.session_state.sessions = json.loads(new_data)
+                        st.experimental_rerun()
+                    except Exception:
+                        st.sidebar.error("Failed to parse saved sessions from browser storage.")
+                else:
+                    st.sidebar.warning("No saved sessions found in browser localStorage.")
         else:
             try:
                 st.session_state.sessions = json.loads(cached_data) if cached_data and cached_data != "CACHE_EMPTY" else {}
@@ -132,6 +177,7 @@ def main():
 
     # Render the chat interface. The UI will lazily build the QA chain on first use
     # to avoid long blocking times during initial page load.
+
     chat_interface(None, None)
 
 

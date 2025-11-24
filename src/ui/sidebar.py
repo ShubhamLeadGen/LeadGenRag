@@ -1,11 +1,39 @@
 import streamlit as st
 from datetime import datetime
-from src.backend.caching import save_cache
+from src.backend.caching import save_cache, load_cache
+import json
 
 def sidebar():
 
     st.sidebar.header("Chat Sessions")
 
+    # If we haven't attempted an automatic merge yet, try to merge saved sessions
+    # from browser Local Storage into the current session store. This keeps saved
+    # sessions available even if the server-side state was initialized empty.
+    if not st.session_state.get("sessions_auto_loaded", False):
+        try:
+            raw = load_cache()
+        except Exception:
+            raw = None
+
+        if raw and raw != "CACHE_EMPTY":
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    for k, v in parsed.items():
+                        if k not in st.session_state.sessions:
+                            st.session_state.sessions[k] = v
+                    st.session_state.sessions_auto_loaded = True
+                    # Select most recent session
+                    st.session_state.active_session_id = sorted(st.session_state.sessions.keys())[-1]
+                    st.experimental_rerun()
+            except Exception:
+                # If parsing fails, mark as attempted to avoid repeated failures
+                st.session_state.sessions_auto_loaded = True
+        else:
+            st.session_state.sessions_auto_loaded = True
+    # Note: Explicit Load/Debug/Import/Export UI removed to simplify sidebar.
+    # Automatic merge from browser Local Storage (performed once) remains above.
     # Verbosity setting
     st.session_state.verbosity = st.sidebar.selectbox(
         "Response Verbosity",
@@ -38,6 +66,23 @@ def sidebar():
         st.rerun()
 
     if st.sidebar.button("+ New Session"):
+        # Before creating a new empty session, merge any saved sessions from
+        # browser Local Storage so we don't overwrite previously saved history.
+        try:
+            raw = load_cache()
+        except Exception:
+            raw = None
+
+        if raw and raw != "CACHE_EMPTY":
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    for k, v in parsed.items():
+                        if k not in st.session_state.sessions:
+                            st.session_state.sessions[k] = v
+            except Exception:
+                pass
+
         new_id = f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         st.session_state.active_session_id = new_id
         st.session_state.sessions[new_id] = []
