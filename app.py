@@ -8,7 +8,6 @@ import json
 import time
 from datetime import datetime
 import streamlit as st
-import threading
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -130,28 +129,6 @@ def main():
 
     # Render sidebar first to get verbosity setting
     sidebar()
-
-# Background warm control: allow the user to warm the QA chain in background
-try:
-    if st.sidebar.button("Warm QA chain in background"):
-        if not st.session_state.get("qa_warm_in_progress", False):
-            def _warm_chain():
-                try:
-                    st.session_state["qa_warm_in_progress"] = True
-                    # build_qa_chain may be cached via Streamlit; calling it will populate cache
-                    st.session_state["qa_chain"] = build_qa_chain()
-                    print("[background warm] QA chain ready and cached in session_state.")
-                except Exception as e:
-                    print(f"[background warm] failed: {e}")
-                finally:
-                    st.session_state["qa_warm_in_progress"] = False
-
-            t = threading.Thread(target=_warm_chain, daemon=True)
-            t.start()
-            st.sidebar.info("Started background warm. It may take a few seconds.")
-except Exception:
-    # If Streamlit's sidebar or session_state isn't available for some reason, ignore warm.
-    pass
 
     # Render the chat interface. The UI will lazily build the QA chain on first use
     # to avoid long blocking times during initial page load.
