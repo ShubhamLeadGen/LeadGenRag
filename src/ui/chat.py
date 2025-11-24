@@ -124,21 +124,20 @@ def chat_interface(qa_chain, llm):
                     chain = qa_chain
                     model = llm
                     if chain is None:
-                        with st.spinner("Warming up models and vectorstore (first use)..."):
-                            from src.backend.qa_chain import build_qa_chain
+                        from src.backend.qa_chain import build_qa_chain
 
-                            try:
-                                chain, model = build_qa_chain(st.session_state.get("verbosity", "Normal"))
-                                # Cache in session for this Streamlit session to avoid rebuilding
-                                st.session_state["qa_chain"] = chain
-                                st.session_state["llm"] = model
-                            except Exception as e:
-                                response = f"Error initializing models: {e}"
-                                st.session_state.sessions[st.session_state.active_session_id].append(
-                                    {"role": "assistant", "content": response, "query": prompt}
-                                )
-                                save_cache(st.session_state.sessions)
-                                st.rerun()
+                        try:
+                            chain, model = build_qa_chain(st.session_state.get("verbosity", "Normal"))
+                            # Cache in session for this Streamlit session to avoid rebuilding
+                            st.session_state["qa_chain"] = chain
+                            st.session_state["llm"] = model
+                        except Exception as e:
+                            response = f"Error initializing models: {e}"
+                            st.session_state.sessions[st.session_state.active_session_id].append(
+                                {"role": "assistant", "content": response, "query": prompt}
+                            )
+                            save_cache(st.session_state.sessions)
+                            st.rerun()
 
                     with chat_container:
                         with st.chat_message("assistant"):

@@ -59,10 +59,31 @@ def main():
         st.markdown(pulsing_css, unsafe_allow_html=True)
 
         # Center the image using columns
-        image_path = os.path.join("Img", "Gemini_Generated_Image_2d6csh2d6csh2d6c.png")
+        def _find_logo(preferred=("Img", "Gemini_Generated_Image_2d6csh2d6csh2d6c.png")):
+            preferred_dir, preferred_name = preferred
+            preferred_path = os.path.join(preferred_dir, preferred_name)
+            if os.path.exists(preferred_path):
+                return preferred_path
+            # Try alternate dir casing
+            alt_dir = "img" if preferred_dir.lower() == "img" else "Img"
+            alt_path = os.path.join(alt_dir, preferred_name)
+            if os.path.exists(alt_path):
+                return alt_path
+            # Otherwise search for any image in Img or img
+            for d in ("Img", "img"):
+                if os.path.isdir(d):
+                    for fname in os.listdir(d):
+                        if fname.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")):
+                            return os.path.join(d, fname)
+            return None
+
+        image_path = _find_logo()
         _, col2, _ = st.columns([1, 2, 1])
         with col2:
-            st.image(image_path, width='stretch')
+            if image_path and os.path.exists(image_path):
+                st.image(image_path, width='stretch')
+            else:
+                st.markdown("<h3>CAPX</h3>", unsafe_allow_html=True)
 
         # Don't block on heavy initialization (LLM / vectorstore). Defer QA chain
         # building until the first user query to improve initial load time.
@@ -71,25 +92,70 @@ def main():
 
     # --- Main App Logic ---
 
-    # This component call triggers the JS to load data from the browser.
-    # Its return value is stored in st.session_state.load_cache by Streamlit on a subsequent script run.
-    load_cache()
+    # This component call attempts to load data from the browser via JS.
+    # If the JS isn't ready (e.g., first run), we fall back to an empty sessions dict
+    # so the UI (chat interface) can render immediately instead of blocking forever.
+    try:
+        cached_data = load_cache()
+    except Exception:
+        cached_data = None
 
     # Check if the session state has been initialized.
+    # Merge Local Storage sessions into session_state once, preserving non-empty histories.
+    if not st.session_state.get("sessions_auto_merged", False):
+        if cached_data and cached_data != "CACHE_EMPTY":
+            try:
+                parsed = json.loads(cached_data)
+                if isinstance(parsed, dict):
+                    # Ensure sessions dict exists
+                    if 'sessions' not in st.session_state:
+                        st.session_state.sessions = {}
+                    for k, v in parsed.items():
+                        try:
+                            inc_len = len(v) if isinstance(v, list) else 0
+                        except Exception:
+                            inc_len = 0
+                        exist = st.session_state.sessions.get(k)
+                        try:
+                            exist_len = len(exist) if isinstance(exist, list) else 0
+                        except Exception:
+                            exist_len = 0
+
+                        # If incoming is empty but existing has messages, keep existing
+                        if inc_len == 0 and exist_len > 0:
+                            continue
+                        st.session_state.sessions[k] = v
+                    st.session_state.sessions_auto_merged = True
+            except Exception:
+                st.session_state.sessions_auto_merged = True
+
     if 'sessions' not in st.session_state:
-        # Get the data returned by the component. It will be None on the first run.
-        cached_data = st.session_state.get('load_cache')
-
-        # If there's no data yet, show a spinner and wait for the component to return data and trigger a rerun.
+        # If the JS hasn't populated `cached_data` yet, proceed with an empty sessions dict
+        # so the chat UI is visible. Provide a visible button to allow the user to
+        # explicitly load saved sessions from browser localStorage when available.
         if cached_data is None:
-            st.spinner("Loading sessions...")
-            return
-
-        # If we have data, process it and initialize the session state.
-        try:
-            st.session_state.sessions = json.loads(cached_data) if cached_data and cached_data != "CACHE_EMPTY" else {}
-        except (json.JSONDecodeError, TypeError):
             st.session_state.sessions = {}
+            st.sidebar.info("Saved sessions not loaded from browser. Click 'Load saved sessions' to restore previous chats.")
+            if st.sidebar.button("Load saved sessions"):
+                # Try to load again; this will execute JS in the browser and return any stored sessions.
+                try:
+                    new_data = load_cache()
+                except Exception:
+                    new_data = None
+
+                if new_data and new_data != "CACHE_EMPTY":
+                    try:
+                        st.session_state.sessions = json.loads(new_data)
+                        st.experimental_rerun()
+                    except Exception:
+                        st.sidebar.error("Failed to parse saved sessions from browser storage.")
+                else:
+                    st.sidebar.warning("No saved sessions found in browser localStorage.")
+        else:
+            try:
+                st.session_state.sessions = json.loads(cached_data) if cached_data and cached_data != "CACHE_EMPTY" else {}
+            except (json.JSONDecodeError, TypeError):
+                st.session_state.sessions = {}
 
     # Ensure an active session is always selected.
     if "active_session_id" not in st.session_state or st.session_state.active_session_id not in st.session_state.sessions:
@@ -111,6 +177,7 @@ def main():
 
     # Render the chat interface. The UI will lazily build the QA chain on first use
     # to avoid long blocking times during initial page load.
+
     chat_interface(None, None)
 
 
