@@ -346,21 +346,6 @@ def main():
             return print("DEBUG: No new or updated documents to process. Ingestion complete.")
 
         docs_to_process = process_files(files_for_processing)
-        
-        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        ingest_data(db, docs_to_process, embeddings)
-
-        print("DEBUG: Ingestion process finished.")
-        print("DEBUG: Creating LanceDB index...")
-        try:
-            table = db.open_table(TABLE_NAME)
-            # This will create an index if one does not exist.
-            # The parameters are chosen to be low to work with small datasets.
-            table.create_index(num_partitions=1, num_sub_vectors=2, replace=True)
-            print("DEBUG: LanceDB index created successfully.")
-        except Exception as e:
-            print(f"DEBUG: Error creating LanceDB index: {e}")
-
     finally:
         shutil.rmtree(temp_dir)
 
