@@ -1,6 +1,6 @@
 langchain
 langchain-community
-langchain-anthropic
+langchain-openai
 langchain-huggingface
 lancedb
 streamlit

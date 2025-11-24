@@ -1,9 +1,9 @@
 import os
 import re
+import time
 from dotenv import load_dotenv
 from langchain.prompts import ChatPromptTemplate
-from langchain.chains import LLMChain
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import LanceDB
 import lancedb
@@ -24,7 +24,17 @@ from src.backend.remember_storage import add_to_remember_user_data_storage, get_
 # -----------------
 # LLM and Chains (initialized once)
 # -----------------
-llm = ChatAnthropic(model=LLM_MODEL, temperature=0)
+print("[timing] agentic_rag: initializing module-level LLM...")
+t0 = time.perf_counter()
+llm = ChatOpenAI(
+    model="anthropic/claude-3-5-haiku-20241022",
+    temperature=0,
+    api_key=os.getenv("FASTROUTER_API_KEY"),
+    openai_api_key=None,
+    base_url=os.getenv("FASTROUTER_BASE_URL")
+)
+t1 = time.perf_counter()
+print(f"[timing] agentic_rag: module-level ChatOpenAI init took {(t1-t0):.2f}s")
 
 # Decomposition Chain
 _decompose_prompt = ChatPromptTemplate.from_template(
@@ -72,22 +82,29 @@ def synthesize_answer(query: str, intermediate_answers: list[str]) -> str:
 # -----------------
 # Setup
 # -----------------
-def setup_llm(api_key: str):
-    # Update the API key for the global llm instance
-    llm.api_key = api_key
-    return llm
+
 
 
 def setup_retriever():
     print(f"Loading LanceDB index from: {LANCEDB_FOLDER}")
+    t0 = time.perf_counter()
     embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    t1 = time.perf_counter()
+    print(f"[timing] setup_retriever: HuggingFaceEmbeddings init took {(t1-t0):.2f}s")
+
+    t2 = time.perf_counter()
     db = lancedb.connect(LANCEDB_FOLDER)
+    t3 = time.perf_counter()
+    print(f"[timing] setup_retriever: lancedb.connect took {(t3-t2):.2f}s")
 
     table_names = db.table_names()
     if "rag_table" not in table_names:
         raise ValueError(f"LanceDB table 'rag_table' not found in {LANCEDB_FOLDER}. Please ingest data first.")
 
+    t4 = time.perf_counter()
     vectorstore = LanceDB(connection=db, embedding=embeddings, table_name="rag_table")
+    t5 = time.perf_counter()
+    print(f"[timing] setup_retriever: LanceDB table open/create took {(t5-t4):.2f}s")
     remember_user_data_table = get_remember_user_data_table()
     remember_user_data_vectorstore = LanceDB(connection=db, embedding=embeddings, table_name=remember_user_data_table.name)
 
@@ -101,11 +118,9 @@ def setup_retriever():
 # -----------------
 def main():
     load_dotenv()
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not found in .env file!")
 
-    setup_llm(anthropic_api_key)
+
+    
     retriever = setup_retriever()
 
     qa_chain = RetrievalQA.from_chain_type(

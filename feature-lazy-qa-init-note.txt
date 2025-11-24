@@ -1,0 +1,71 @@
+Branch: feature/lazy-qa-init
+
+Purpose:
+- Add lazy initialization for the heavy QA chain and LLM to reduce Streamlit cold-start time.
+- Centralize FastRouter compatibility fixes (openai_api_key=None).
+
+Files changed:
+- app.py: removed synchronous pre-warm; call chat_interface(None, None).
+- src/ui/chat.py: lazy-build QA chain on first user prompt; cache chain in st.session_state.
+- src/backend/agentic_rag.py: switched model to FastRouter model and added openai_api_key=None.
+- src/backend/rag_chat.py: updated model + openai_api_key=None in setup_llm().
+- src/backend/qa_chain.py: updated model + openai_api_key=None in build_qa_chain().
+- scripts/ingest.py: updated model + openai_api_key=None in describe_image().
+
+How it helps:
+- Streamlit now loads quickly; heavy work deferred until first interaction.
+- Avoids LangChain/OpenAI validation errors when using FastRouter.
+
+How to test locally:
+1. Ensure on the branch:
+   git checkout feature/lazy-qa-init
+2. Run the app:
+   streamlit run app.py
+3. Open http://localhost:8501. The page should load fast; the first query shows a spinner while models/vectorstore warm up.
+
+Notes before merging:
+- Rotate any exposed API keys and add `.env` to .gitignore.
+- Confirm QA and "remember" flows work after lazy init.
+- Optionally add a UI toggle to preload models in background.
+
+PR/merge tips:
+- Create a PR from this branch to `main` with the title: "feat: lazy QA chain init (reduce cold start)".
+- Include test notes and mention key changes to LLM config.
+
+Generated on: 2025-11-22
+
+Commands used / recommended
+---------------------------
+- Check working tree and current branch (what I ran before creating branch):
+   git status --porcelain; git branch --show-current
+
+- Create a new branch and switch to it (what I ran):
+   git checkout -b feature/lazy-qa-init
+
+- Push the new branch to the remote and set upstream (what I ran):
+   git push -u origin feature/lazy-qa-init
+
+- Quick start Streamlit (what I ran to test):
+   streamlit run app.py
+
+- Useful branch / commit commands:
+   git add .
+   git commit -m "WIP: describe changes"
+   git stash push -m "WIP stash"
+   git switch -c feature/lazy-qa-init  # alternative create+switch
+
+- Create a PR from the CLI (optional):
+   gh pr create --base main --head feature/lazy-qa-init --title "feat: lazy QA init" --body "Defers QA chain build to first use"
+
+- To return to main:
+   git checkout main
+
+Notes:
+- The combined command I executed in the terminal was:
+   git status --porcelain; git branch --show-current; git checkout -b feature/lazy-qa-init; git push -u origin feature/lazy-qa-init
+
+Add this file to the branch and commit it if you'd like it tracked with the feature changes.
+
+
+
+git branch --show-current; git status --porcelain; streamlit run app.py

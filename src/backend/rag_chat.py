@@ -1,9 +1,10 @@
 import os
 import re
 from dotenv import load_dotenv
+import time
 from langchain.prompts import ChatPromptTemplate
 from langchain.chains import RetrievalQA
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import LanceDB
 import lancedb
@@ -17,18 +18,32 @@ from src.utils import is_gibberish, polite_fallback, beautify_response, extract_
 # -----------------
 # Setup
 # -----------------
-def setup_llm(api_key: str):
-    return ChatAnthropic(
-        model=LLM_MODEL,
+def setup_llm():
+    print("[timing] rag_chat: initializing LLM via setup_llm...")
+    t0 = time.perf_counter()
+    llm = ChatOpenAI(
+        model="anthropic/claude-3-5-haiku-20241022",
         temperature=0,
-        max_tokens_to_sample=2000,
-        anthropic_api_key=api_key
+        max_tokens=2000,
+        api_key=os.getenv("FASTROUTER_API_KEY"),
+        openai_api_key=None,
+        base_url=os.getenv("FASTROUTER_BASE_URL")
     )
+    t1 = time.perf_counter()
+    print(f"[timing] rag_chat: setup_llm ChatOpenAI init took {(t1-t0):.2f}s")
+    return llm
 
 def setup_retriever():
     print(f"Loading LanceDB index from: {LANCEDB_FOLDER}")
+    t0 = time.perf_counter()
     embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    t1 = time.perf_counter()
+    print(f"[timing] rag_chat: HuggingFaceEmbeddings init took {(t1-t0):.2f}s")
+
+    t2 = time.perf_counter()
     db = lancedb.connect(LANCEDB_FOLDER)
+    t3 = time.perf_counter()
+    print(f"[timing] rag_chat: lancedb.connect took {(t3-t2):.2f}s")
 
     # Ensure table exists
     try:
@@ -50,11 +65,7 @@ def setup_retriever():
 # -----------------
 def main():
     load_dotenv()
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not found in .env file!")
-
-    llm = setup_llm(anthropic_api_key)
+    llm = setup_llm()
     retriever = setup_retriever()
 
     qa_chain = RetrievalQA.from_chain_type(
