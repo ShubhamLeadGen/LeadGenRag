@@ -12,7 +12,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import lancedb
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from langchain.docstore.document import Document
 from unstructured.partition.docx import partition_docx
@@ -56,10 +56,15 @@ def calculate_content_hash(content: str):
     return hasher.hexdigest()
 
 
-def describe_image(image_data: bytes, api_key: str) -> str:
+def describe_image(image_data: bytes) -> str:
     """Uses a multimodal model to describe an image."""
     try:
-        llm = ChatAnthropic(model="claude-3-opus-20240229", api_key=api_key)
+        llm = ChatOpenAI(
+            model="anthropic/claude-3-5-haiku-20241022",
+            api_key=os.getenv("FASTROUTER_API_KEY"),
+            openai_api_key=None,
+            base_url=os.getenv("FASTROUTER_BASE_URL")
+        )
         encoded_image = base64.b64encode(image_data).decode('utf-8')
         message = HumanMessage(content=[
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}},
@@ -200,7 +205,7 @@ def delete_stale_data(db, files_to_delete, files_to_update):
             print(f"DEBUG: Deleting records for {len(to_delete_from_db)} changed/deleted sources: {to_delete_from_db}")
             table.delete(f"source IN ('{delete_query}')")
 
-def process_files(files_for_processing, api_key):
+def process_files(files_for_processing):
     """Loads and processes files to be ingested."""
     docs_to_process = []
     print(f"DEBUG: Processing {len(files_for_processing)} files.")
@@ -235,7 +240,7 @@ def process_files(files_for_processing, api_key):
                 elif file_ext in image_extensions:
                     with open(file_path, "rb") as image_file:
                         image_data = image_file.read()
-                    description = describe_image(image_data, api_key)
+                    description = describe_image(image_data)
                     if description:
                         loaded_docs.append(Document(page_content=description))
                 else: 
@@ -340,8 +345,7 @@ def main():
         if not files_for_processing:
             return print("DEBUG: No new or updated documents to process. Ingestion complete.")
 
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        docs_to_process = process_files(files_for_processing, api_key)
+        docs_to_process = process_files(files_for_processing)
         
         embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
         ingest_data(db, docs_to_process, embeddings)

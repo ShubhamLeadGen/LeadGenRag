@@ -1,7 +1,8 @@
 import os
 import streamlit as st
+import time
 from langchain.chains import RetrievalQA
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from src.config import LLM_MODEL, RETRIEVER_K
 from src.backend.vectorstore import load_vectorstore
@@ -9,7 +10,14 @@ from src.backend.agentic_rag import set_llm
 
 @st.cache_resource
 def build_qa_chain(verbosity="Normal"):
+    start_total = time.perf_counter()
+    print("[timing] build_qa_chain: starting QA chain build")
+
+    t0 = time.perf_counter()
     vs = load_vectorstore()
+    t1 = time.perf_counter()
+    print(f"[timing] build_qa_chain: load_vectorstore took {(t1-t0):.2f}s")
+
     retriever = vs.as_retriever(search_kwargs={"k": RETRIEVER_K})
 
     prompts = {
@@ -24,16 +32,29 @@ def build_qa_chain(verbosity="Normal"):
         ("human", "Context:\n{context}\n\nQuestion:\n{question}")
     ])
 
-    llm = ChatAnthropic(
-        model=LLM_MODEL,
+    t2 = time.perf_counter()
+    llm = ChatOpenAI(
+        model="anthropic/claude-3-5-haiku-20241022",
         temperature=0,
-        api_key=os.getenv("ANTHROPIC_API_KEY")
+        api_key=os.getenv("FASTROUTER_API_KEY"),
+        openai_api_key=None,
+        base_url=os.getenv("FASTROUTER_BASE_URL")
     )
+    t3 = time.perf_counter()
+    print(f"[timing] build_qa_chain: ChatOpenAI init took {(t3-t2):.2f}s")
+
     set_llm(llm)  # Set the LLM for the agentic chains
-    return RetrievalQA.from_chain_type(
+
+    t4 = time.perf_counter()
+    chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
         chain_type="stuff",
         chain_type_kwargs={"prompt": prompt},
         return_source_documents=True
-    ), llm
+    )
+    t5 = time.perf_counter()
+    print(f"[timing] build_qa_chain: RetrievalQA.from_chain_type took {(t5-t4):.2f}s")
+    total = time.perf_counter() - start_total
+    print(f"[timing] build_qa_chain: total build time {(total):.2f}s")
+    return chain, llm

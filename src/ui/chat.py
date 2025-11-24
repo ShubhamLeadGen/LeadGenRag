@@ -120,34 +120,52 @@ def chat_interface(qa_chain, llm):
                     save_cache(st.session_state.sessions)
                     st.rerun()
                 else:
+                    # Ensure QA chain is available; build lazily if not provided.
+                    chain = qa_chain
+                    model = llm
+                    if chain is None:
+                        with st.spinner("Warming up models and vectorstore (first use)..."):
+                            from src.backend.qa_chain import build_qa_chain
+
+                            try:
+                                chain, model = build_qa_chain(st.session_state.get("verbosity", "Normal"))
+                                # Cache in session for this Streamlit session to avoid rebuilding
+                                st.session_state["qa_chain"] = chain
+                                st.session_state["llm"] = model
+                            except Exception as e:
+                                response = f"Error initializing models: {e}"
+                                st.session_state.sessions[st.session_state.active_session_id].append(
+                                    {"role": "assistant", "content": response, "query": prompt}
+                                )
+                                save_cache(st.session_state.sessions)
+                                st.rerun()
+
                     with chat_container:
                         with st.chat_message("assistant"):
+                            with st.spinner("Thinking..."):
+                                sub_questions = decompose_query(prompt)
 
+                                if len(sub_questions) > 1:
+                                    intermediate_answers = ["" for _ in sub_questions]
+                                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                                        future_to_index = {executor.submit(chain.invoke, {"query": q}): i for i, q in enumerate(sub_questions)}
+                                        for future in concurrent.futures.as_completed(future_to_index):
+                                            index = future_to_index[future]
+                                            try:
+                                                result = future.result()
+                                                intermediate_answers[index] = result["result"]
+                                            except Exception as exc:
+                                                print(f"Sub-question at index {index} generated an exception: {exc}")
+                                                intermediate_answers[index] = "Error processing sub-question."
 
-                                                with st.spinner("Thinking..."):
-                                                    sub_questions = decompose_query(prompt)
-                                            
-                                                    if len(sub_questions) > 1:
-                                                        intermediate_answers = ["" for _ in sub_questions]
-                                                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                                                            future_to_index = {executor.submit(qa_chain.invoke, {"query": q}): i for i, q in enumerate(sub_questions)}
-                                                            for future in concurrent.futures.as_completed(future_to_index):
-                                                                index = future_to_index[future]
-                                                                try:
-                                                                    result = future.result()
-                                                                    intermediate_answers[index] = result["result"]
-                                                                except Exception as exc:
-                                                                    print(f"Sub-question at index {index} generated an exception: {exc}")
-                                                                    intermediate_answers[index] = "Error processing sub-question."
-                                                        
-                                                        final_answer = synthesize_answer(prompt, intermediate_answers)
-                                                    elif sub_questions:
-                                                        result = qa_chain.invoke({"query": sub_questions[0]})
-                                                        final_answer = result["result"]
-                                                    else:
-                                                        final_answer = "I'm not sure how to answer that. Could you rephrase?"
+                                    final_answer = synthesize_answer(prompt, intermediate_answers)
+                                elif sub_questions:
+                                    result = chain.invoke({"query": sub_questions[0]})
+                                    final_answer = result["result"]
+                                else:
+                                    final_answer = "I'm not sure how to answer that. Could you rephrase?"
 
-                                                    response = beautify_response(final_answer)
+                                response = beautify_response(final_answer)
                 print(f"DEBUG: Appending QA chain assistant response: {response}")
                 st.session_state.sessions[st.session_state.active_session_id].append(
                     {"role": "assistant", "content": response, "query": prompt}

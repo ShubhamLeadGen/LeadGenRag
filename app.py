@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 import streamlit as st
 from dotenv import load_dotenv
+load_dotenv()
 
 from src.backend.qa_chain import build_qa_chain
 from src.backend.caching import load_cache
@@ -30,7 +31,7 @@ def main():
         ''',
         unsafe_allow_html=True
     )
-    load_dotenv()
+
 
     # Start the file watcher in a background thread
     start_file_watcher(st.session_state)
@@ -63,12 +64,9 @@ def main():
         with col2:
             st.image(image_path, width='stretch')
 
-        with st.spinner("Loading assets... please wait."):
-            build_qa_chain("Normal")
-        
+        # Don't block on heavy initialization (LLM / vectorstore). Defer QA chain
+        # building until the first user query to improve initial load time.
         st.session_state.app_initialized = True
-        
-        time.sleep(3)
         st.rerun()
 
     # --- Main App Logic ---
@@ -111,10 +109,9 @@ def main():
     # Render sidebar first to get verbosity setting
     sidebar()
 
-    # Now that state is properly initialized, build the QA chain and render the UI.
-    # The chain is already cached from the initial load.
-    qa_chain, llm = build_qa_chain(st.session_state.verbosity)
-    chat_interface(qa_chain, llm)
+    # Render the chat interface. The UI will lazily build the QA chain on first use
+    # to avoid long blocking times during initial page load.
+    chat_interface(None, None)
 
 
 if __name__ == "__main__":
