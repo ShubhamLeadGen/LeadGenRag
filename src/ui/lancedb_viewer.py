@@ -1,10 +1,14 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
 import streamlit as st
 import lancedb
 import pandas as pd
+import sys
+import os
+
+# Add the project root directory to the Python path
+project_root = os.getcwd()
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from src.config import LANCEDB_FOLDER, EMBEDDING_MODEL
 from langchain_huggingface import HuggingFaceEmbeddings
 

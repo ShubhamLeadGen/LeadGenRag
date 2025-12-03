@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import logging
 from dotenv import load_dotenv
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
@@ -19,22 +20,25 @@ from src.config import (
 from src.utils import is_gibberish, polite_fallback, beautify_response, extract_clean_text
 from langchain_core.documents import Document
 from langchain.chains import RetrievalQA
-from src.backend.remember_storage import add_to_remember_user_data_storage, get_remember_user_data_table
+# Defer importing remember_storage to avoid circular import during module load
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # -----------------
 # LLM and Chains (initialized once)
 # -----------------
-print("[timing] agentic_rag: initializing module-level LLM...")
+logging.info("[timing] agentic_rag: initializing module-level LLM...")
 t0 = time.perf_counter()
 llm = ChatOpenAI(
-    model="anthropic/claude-3-5-haiku-20241022",
+    model=LLM_MODEL,
     temperature=0,
     api_key=os.getenv("FASTROUTER_API_KEY"),
     openai_api_key=None,
     base_url=os.getenv("FASTROUTER_BASE_URL")
 )
 t1 = time.perf_counter()
-print(f"[timing] agentic_rag: module-level ChatOpenAI init took {(t1-t0):.2f}s")
+logging.info(f"[timing] agentic_rag: module-level ChatOpenAI init took {(t1-t0):.2f}s")
 
 # Decomposition Chain
 _decompose_prompt = ChatPromptTemplate.from_template(
@@ -70,12 +74,18 @@ from src.utils import is_gibberish, polite_fallback, beautify_response, extract_
 # Agentic Logic
 # -----------------
 def decompose_query(query: str) -> list[str]:
+    logging.info(f"Decomposing query: {query}")
     response = _decompose_chain.invoke({"query": query})
     sub_questions = [q.strip() for q in response.content.strip().split('\n') if q.strip()]
+    logging.info(f"Decomposed sub-questions: {sub_questions}")
     return sub_questions
 
+
 def synthesize_answer(query: str, intermediate_answers: list[str]) -> str:
+    logging.info(f"Synthesizing answer for query: {query}")
+    logging.info(f"Intermediate answers: {intermediate_answers}")
     response = _synthesize_chain.invoke({"query": query, "intermediate_answers": "\n".join(intermediate_answers)})
+    logging.info(f"Synthesized answer: {response.content}")
     return response.content
 
 
@@ -105,6 +115,9 @@ def setup_retriever():
     vectorstore = LanceDB(connection=db, embedding=embeddings, table_name="rag_table")
     t5 = time.perf_counter()
     print(f"[timing] setup_retriever: LanceDB table open/create took {(t5-t4):.2f}s")
+    # Import here to avoid circular import at module import time
+    from src.backend.remember_storage import get_remember_user_data_table
+
     remember_user_data_table = get_remember_user_data_table()
     remember_user_data_vectorstore = LanceDB(connection=db, embedding=embeddings, table_name=remember_user_data_table.name)
 
@@ -148,7 +161,10 @@ Answer:"""
             print("Goodbye!")
             break
         if question.lower().startswith("remember this"):
-            remember_data = question[len("remember this:"):].strip()
+            remember_data = question[len("remember this"):
+].strip()
+            # Import locally to avoid circular import when module is imported elsewhere
+            from src.backend.remember_storage import add_to_remember_user_data_storage
             add_to_remember_user_data_storage(remember_data, remember_data)
             print("Bot: I will remember that.")
             continue

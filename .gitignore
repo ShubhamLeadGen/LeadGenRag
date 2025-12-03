@@ -1,1 +1,4 @@
 .env
+lancedb/
+__pycache__/
+*.pyc

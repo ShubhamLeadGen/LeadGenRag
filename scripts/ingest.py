@@ -113,15 +113,24 @@ def get_existing_source_hashes(db):
     source_hashes = {}
     if TABLE_NAME in db.table_names():
         table = db.open_table(TABLE_NAME)
+        # Check for all expected columns
+        expected_columns = ['source', 'hash', 'text']
+        if not all(col in table.schema.names for col in expected_columns):
+            print(f"Warning: Table '{TABLE_NAME}' exists but is missing one or more required columns ({', '.join(expected_columns)}). Dropping and recreating to ensure correct schema.")
+            db.drop_table(TABLE_NAME)
+            return source_hashes # Return empty as table is dropped
+        
         if 'source' in table.schema.names and 'hash' in table.schema.names:
             try:
                 df = table.to_pandas()
                 if not df.empty:
+                    # Ensure no duplicates in source for hash mapping
                     source_hashes = df.drop_duplicates('source').set_index('source')['hash'].to_dict()
                 print(f"Found {len(source_hashes)} existing sources in the database.")
             except Exception as e:
                 print(f"Could not read existing hashes. Error: {e}")
         else:
+            # This part should ideally not be reached if the all(col in table.schema.names...) check works
             print("Warning: Table exists but is missing required columns. Dropping and recreating.")
             db.drop_table(TABLE_NAME)
     return source_hashes
@@ -346,6 +355,8 @@ def main():
             return print("DEBUG: No new or updated documents to process. Ingestion complete.")
 
         docs_to_process = process_files(files_for_processing)
+        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL, model_kwargs={'device': 'cpu'})
+        ingest_data(db, docs_to_process, embeddings)
     finally:
         shutil.rmtree(temp_dir)
 
