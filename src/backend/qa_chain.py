@@ -8,14 +8,36 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import LanceDB
 from langchain.retrievers import MergerRetriever
+from langchain.chat_models.fake import FakeListChatModel
 
-from src.config import LLM_MODEL, RETRIEVER_K, LANCEDB_FOLDER, EMBEDDING_MODEL, SIMILARITY_THRESHOLD
+from src.config import LLM_MODEL, RETRIEVER_K, LANCEDB_FOLDER, EMBEDDING_MODEL, SIMILARITY_THRESHOLD, ALLOW_EXTERNAL_LLMS
 from src.backend.agentic_rag import set_llm
 from src.backend.remember_storage import REMEMBER_USER_DATA_TABLE_NAME
 from src.backend.context_storage import CONTEXT_TABLE_NAME
 
 @st.cache_resource
-def build_qa_chain(verbosity="Normal"):
+def init_embeddings_cached():
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+
+@st.cache_resource
+def init_llm_cached():
+    if not ALLOW_EXTERNAL_LLMS:
+        # If external LLMs are not allowed, use a fake LLM that returns a fixed response.
+        # This is useful for testing the RAG pipeline without making external calls.
+        responses = ["The answer is not in the context."]
+        llm = FakeListChatModel(responses=responses)
+    else:
+        llm = ChatOpenAI(
+            model=LLM_MODEL,
+            temperature=0,
+            api_key=os.getenv("FASTROUTER_API_KEY"),
+            openai_api_key=None,
+            base_url=os.getenv("FASTROUTER_BASE_URL")
+        )
+    set_llm(llm)  # Set the LLM for the agentic chains
+    return llm
+
+def build_qa_chain(verbosity="Normal", strict_mode=False):
     """
     Builds a RetrievalQA chain that sources documents from three different vector
     stores: the main RAG table, the user's "remembered" data, and the user's
@@ -26,7 +48,7 @@ def build_qa_chain(verbosity="Normal"):
 
     # 1. Initialize Embeddings and DB Connection
     t0 = time.perf_counter()
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    embeddings = init_embeddings_cached()
     db = lancedb.connect(LANCEDB_FOLDER)
     table_names = db.table_names()
     t1 = time.perf_counter()
@@ -81,11 +103,16 @@ def build_qa_chain(verbosity="Normal"):
 
     # 6. Create the LLM and Prompt
     prompts = {
-        "Concise": "You are a helpful assistant. Your goal is to provide concise and accurate answers. Keep your answers very brief, ideally 1-2 sentences. Use the provided context to answer.",
-        "Normal": "You are a helpful assistant. Your goal is to provide concise and accurate answers based on the provided context. Tailor the length of your response to the user's question. For simple questions, provide a brief, 2-4 sentence answer. For more complex questions, provide a 4-6 sentence summary.",
-        "Detailed": "You are a helpful assistant. Your goal is to provide comprehensive and detailed answers. Use the provided context thoroughly. Explain your reasoning and provide as much detail as possible."
+        "Concise": "You are a helpful assistant. Your goal is to provide concise and accurate answers. Keep your answers very brief, ideally 1-2 sentences. Use *only* the provided context to answer. If the answer is not in the context, say 'I don't know'.",
+        "Normal": "You are a helpful assistant. Your goal is to provide concise and accurate answers based *only* on the provided context. Do not use any other information. If the answer is not in the context, say 'I don't know'. Tailor the length of your response to the user's question. For simple questions, provide a brief, 2-4 sentence answer. For more complex questions, provide a 4-6 sentence summary.",
+        "Detailed": "You are a helpful assistant. Your goal is to provide comprehensive and detailed answers, based *only* on the provided context. Use the provided context thoroughly and do not use any other information. Explain your reasoning and provide as much detail as possible. If the answer is not in the context, say 'I don't know'.",
+        "Strict": "You are a specialized AI assistant. Your primary and *only* function is to answer questions based on the provided context. You must *never* use any information outside of this context. If the answer is not found in the context, you *must* state 'I couldn't find a relevant answer in the provided documents.' and nothing else."
     }
-    system_prompt = prompts.get(verbosity, prompts["Normal"])
+    
+    if strict_mode:
+        system_prompt = prompts["Strict"]
+    else:
+        system_prompt = prompts.get(verbosity, prompts["Normal"])
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -93,17 +120,9 @@ def build_qa_chain(verbosity="Normal"):
     ])
 
     t2 = time.perf_counter()
-    llm = ChatOpenAI(
-        model=LLM_MODEL,
-        temperature=0,
-        api_key=os.getenv("FASTROUTER_API_KEY"),
-        openai_api_key=None,
-        base_url=os.getenv("FASTROUTER_BASE_URL")
-    )
+    llm = init_llm_cached()
     t3 = time.perf_counter()
     print(f"[timing] build_qa_chain: ChatOpenAI init took {(t3-t2):.2f}s")
-
-    set_llm(llm)  # Set the LLM for the agentic chains
 
     # 7. Create the final RetrievalQA chain
     t4 = time.perf_counter()

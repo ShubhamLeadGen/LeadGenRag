@@ -42,6 +42,12 @@ def sidebar():
         help="Choose the level of detail for the AI's answers."
     )
 
+    st.session_state.strict_mode = st.sidebar.checkbox(
+        "Strict Mode",
+        value=st.session_state.get("strict_mode", False),
+        help="If enabled, the AI will only use the provided documents to answer questions."
+    )
+
     st.sidebar.divider()
 
     session_names = list(st.session_state.sessions.keys())

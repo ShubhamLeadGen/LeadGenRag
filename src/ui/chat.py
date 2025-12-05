@@ -40,16 +40,21 @@ def _process_rag_query(prompt, chat_container):
     The QA chain now uses a MergerRetriever to search all data sources at once.
     """
     try:
-        # Ensure QA chain is available; build lazily if not provided.
-        if "qa_chain" not in st.session_state:
-            try:
-                chain, model = build_qa_chain(st.session_state.get("verbosity", "Normal"))
-                st.session_state["qa_chain"] = chain
-                st.session_state["llm"] = model
-            except Exception as e:
-                logging.error(f"Error initializing models: {e}")
-                st.error(f"Could not build the QA chain: {e}")
-                return f"Error initializing models: {e}"
+        # Build the QA chain on each query to ensure settings are respected.
+        # The build_qa_chain function is cached, so it will only rebuild
+        # if the verbosity or strict_mode settings have changed.
+        try:
+            chain, model = build_qa_chain(
+                verbosity=st.session_state.get("verbosity", "Normal"),
+                strict_mode=st.session_state.get("strict_mode", False)
+            )
+            st.session_state["qa_chain"] = chain
+            st.session_state["llm"] = model
+        except Exception as e:
+            logging.error(f"Error initializing models: {e}")
+            st.error(f"Could not build the QA chain: {e}")
+            return f"Error initializing models: {e}"
+        
         chain = st.session_state["qa_chain"]
 
         with chat_container:
@@ -67,7 +72,11 @@ def _process_rag_query(prompt, chat_container):
                                 index = future_to_index[future]
                                 try:
                                     result = future.result()
-                                    intermediate_answers[index] = result["result"]
+                                    logging.info(f"Retrieved documents for sub-question '{sub_questions[index]}': {result['source_documents']}")
+                                    if result['source_documents']:
+                                        intermediate_answers[index] = result["result"]
+                                    else:
+                                        intermediate_answers[index] = "I don't have any information about that in my knowledge base."
                                 except Exception as exc:
                                     tb_str = traceback.format_exc()
                                     logging.error(f"Sub-question at index {index} generated an exception:\n{tb_str}")
@@ -76,7 +85,11 @@ def _process_rag_query(prompt, chat_container):
                         final_answer = synthesize_answer(prompt, intermediate_answers)
                     elif sub_questions:
                         result = chain.invoke({"query": sub_questions[0]})
-                        final_answer = result["result"]
+                        logging.info(f"Retrieved documents: {result['source_documents']}")
+                        if result['source_documents']:
+                            final_answer = result["result"]
+                        else:
+                            final_answer = "I don't have any information about that in my knowledge base."
                     else:
                         final_answer = "I'm not sure how to answer that. Could you rephrase?"
 
@@ -147,4 +160,3 @@ def chat_interface():
         
         save_cache(st.session_state.sessions)
         # Rerun to display the new message and update button states
-        st.rerun()

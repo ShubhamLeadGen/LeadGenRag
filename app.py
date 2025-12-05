@@ -15,7 +15,7 @@ import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.backend.qa_chain import build_qa_chain
+from src.backend.qa_chain import build_qa_chain, init_embeddings_cached, init_llm_cached
 from src.backend.caching import load_cache
 from src.ui.sidebar import sidebar
 from src.ui.chat import chat_interface
@@ -31,19 +31,23 @@ def _find_logo():
     """Find the logo image file, searching in likely directories."""
     preferred_path = "Img/Gemini_Generated_Image_2d6csh2d6csh2d6c.png"
     if os.path.exists(preferred_path):
-        return preferred_path
+        return os.path.abspath(preferred_path)
     
     # Fallback search in case of different casing or other images
     for dir_name in ("Img", "img"):
         if os.path.isdir(dir_name):
             for fname in os.listdir(dir_name):
                 if fname.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")):
-                    return os.path.join(dir_name, fname)
+                    return os.path.abspath(os.path.join(dir_name, fname))
     return None
 
 def main():
     st.set_page_config(page_title="CAPX", page_icon=_find_logo(), layout="wide")
     load_css("src/ui/styles.css")
+    
+    # Pre-warm the cache for the LLM and embeddings
+    init_embeddings_cached()
+    init_llm_cached()
 
     # Start the file watcher in a background thread
     start_file_watcher(st.session_state)
@@ -64,8 +68,6 @@ def main():
             else:
                 st.markdown("<h3>CAPX</h3>", unsafe_allow_html=True)
 
-        # Don't block on heavy initialization (LLM / vectorstore). Defer QA chain
-        # building until the first user query to improve initial load time.
         st.session_state.app_initialized = True
         st.rerun()
 
@@ -79,9 +81,7 @@ def main():
     # Render sidebar first to get verbosity setting
     sidebar()
 
-    # Render the chat interface. The UI will lazily build the QA chain on first use
-    # to avoid long blocking times during initial page load.
-
+    # The QA chain will now be built using the pre-warmed models
     chat_interface()
 
 
