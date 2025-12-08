@@ -10,6 +10,7 @@ from langchain_community.vectorstores import LanceDB
 from langchain.retrievers import MergerRetriever
 from langchain.chat_models.fake import FakeListChatModel
 
+from src.backend.reranking_retriever import ReRankingRetriever
 from src.config import LLM_MODEL, RETRIEVER_K, LANCEDB_FOLDER, EMBEDDING_MODEL, SIMILARITY_THRESHOLD, ALLOW_EXTERNAL_LLMS
 from src.backend.agentic_rag import set_llm
 from src.backend.remember_storage import REMEMBER_USER_DATA_TABLE_NAME
@@ -54,13 +55,23 @@ def build_qa_chain(verbosity="Normal", strict_mode=False):
     t1 = time.perf_counter()
     print(f"[timing] build_qa_chain: Embeddings and DB connection took {(t1-t0):.2f}s")
 
+    # 1a. Set retriever 'k' based on verbosity
+    # More documents for detailed answers, fewer for concise ones.
+    verbosity_k_map = {
+        "Concise": 2,
+        "Normal": 4,
+        "Detailed": 6
+    }
+    k_value = verbosity_k_map.get(verbosity, 4)
+    print(f"[info] build_qa_chain: Using k={k_value} for verbosity='{verbosity}'")
+
     retrievers = []
 
     # 2. Create Retriever for the main `rag_table`
     if "rag_table" in table_names:
         rag_vectorstore = LanceDB(connection=db, embedding=embeddings, table_name="rag_table")
         retrievers.append(rag_vectorstore.as_retriever(
-            search_kwargs={"k": RETRIEVER_K, "score_threshold": SIMILARITY_THRESHOLD}
+            search_kwargs={"k": k_value, "score_threshold": SIMILARITY_THRESHOLD}
         ))
         print("[info] build_qa_chain: Added `rag_table` to retrievers.")
     else:
@@ -74,7 +85,7 @@ def build_qa_chain(verbosity="Normal", strict_mode=False):
             table_name=REMEMBER_USER_DATA_TABLE_NAME
         )
         retrievers.append(remember_vectorstore.as_retriever(
-            search_kwargs={"k": 3, "score_threshold": SIMILARITY_THRESHOLD}
+            search_kwargs={"k": k_value, "score_threshold": SIMILARITY_THRESHOLD}
         ))
         print(f"[info] build_qa_chain: Added `{REMEMBER_USER_DATA_TABLE_NAME}` to retrievers.")
     else:
@@ -88,7 +99,7 @@ def build_qa_chain(verbosity="Normal", strict_mode=False):
             table_name=CONTEXT_TABLE_NAME
         )
         retrievers.append(context_vectorstore.as_retriever(
-            search_kwargs={"k": 3, "score_threshold": SIMILARITY_THRESHOLD}
+            search_kwargs={"k": k_value, "score_threshold": SIMILARITY_THRESHOLD}
         ))
         print(f"[info] build_qa_chain: Added `{CONTEXT_TABLE_NAME}` to retrievers.")
     else:
@@ -100,6 +111,9 @@ def build_qa_chain(verbosity="Normal", strict_mode=False):
     # 5. Create the MergerRetriever
     lotr = MergerRetriever(retrievers=retrievers)
     print(f"[info] build_qa_chain: MergerRetriever created with {len(retrievers)} retrievers.")
+
+    # 5b. Create the Re-ranking Retriever
+    reranking_retriever = ReRankingRetriever(base_retriever=lotr, k=k_value)
 
     # 6. Create the LLM and Prompt
     prompts = {
@@ -113,6 +127,8 @@ def build_qa_chain(verbosity="Normal", strict_mode=False):
         system_prompt = prompts["Strict"]
     else:
         system_prompt = prompts.get(verbosity, prompts["Normal"])
+
+    print(f"[info] build_qa_chain: Verbosity='{verbosity}', StrictMode={strict_mode}, SystemPrompt='{system_prompt[:50]}...'")
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -128,7 +144,7 @@ def build_qa_chain(verbosity="Normal", strict_mode=False):
     t4 = time.perf_counter()
     chain = RetrievalQA.from_chain_type(
         llm=llm,
-        retriever=lotr, # Use the MergerRetriever here
+        retriever=reranking_retriever, # Use the ReRankingRetriever here
         chain_type="stuff",
         chain_type_kwargs={"prompt": prompt},
         return_source_documents=True

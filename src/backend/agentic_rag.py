@@ -44,35 +44,83 @@ def _clean_lines(text):
     return [t for t in text.split("\n") if t.strip() and not t.lower().startswith("for the query")]
 
 _decompose_prompt = ChatPromptTemplate.from_template(
-    """You are a query decomposer for marketing and lead generation.
-Break the user's query into simple, atomic sub-questions.
-ONLY include sub-questions related to: lead generation, marketing, funnels, ads, campaigns, user acquisition.
-Do NOT add explanations. Return only hyphenated bullet points.
+    """
+You are an expert query decomposition assistant.
+
+Your goal is to break the user's query into the minimum necessary sub-questions that can be answered from one and only one internal source:
+1. The Knowledge Base (including events, test links, flow names, and exact identifiers).
+2. The User Memory.
+3. The User's Liked Conversation History.
+
+STRICT RULES:
+- If the user's query mentions an event, test link, flow, campaign, or any named entity, you must use the **exact same name** as it appears in the user's Knowledge Base. Do not paraphrase or rename it.
+- Prefer sub-questions that retrieve KB content (events, test links, marketing logic, rules, flows, testing steps, etc.).
+- Sub-questions must be answerable by ONE data source only.
+- Create no speculative or external questions.
+- Output ONLY hyphenated bullet points, nothing else.
+
+SPECIAL RULES FOR EVENTS & TEST LINKS:
+- If a query asks about an event, generate sub-questions such as:
+  - "What details about the event <exact_event_name> exist in the Knowledge Base?"
+- If a query asks about a test link, generate sub-questions such as:
+  - "What information for the test link <exact_test_link_name> is stored in the Knowledge Base?"
+
+Now process:
 
 Query: {query}
-Sub-questions:"""
+
+Sub-questions:
+"""
 )
-
 _synthesize_prompt = ChatPromptTemplate.from_template(
-    """You are an expert synthesizer in lead generation.
-Combine ONLY the intermediate answers into one clear final answer.
-Do NOT hallucinate.
-Do NOT add anything that is NOT inside the provided answers.
+    """
+You are an expert synthesizer.
+
+Your job is to combine intermediate answers into one final, concise, accurate response.
+
+STRICT RULES:
+- Use ONLY the provided intermediate answers. No external facts.
+- If events, test links, flows, campaign names, or any labeled entities appear, you MUST repeat them using their **exact names** from the Knowledge Base.
+- Content must be primarily sourced (90% or more) from the Knowledge Base unless User Memory or Liked History explicitly overrides.
+- No hallucination, no reinterpretation, no renaming of entities.
+
+STRUCTURE:
+1. A short, clear, coherent response (2–6 sentences).
+2. A final summary sentence using ONLY information from intermediate answers and using exact entity names.
+
+Your final output must be fully grounded: no assumptions or invented details.
 
 Query: {query}
+
 Intermediate Answers:
 {intermediate_answers}
 
-Final Answer:"""
+Final Answer:
+"""
 )
 
 _should_search_prompt = ChatPromptTemplate.from_template(
-    """Should a web search be used to answer this query?
-Say only: Yes or No.
+    """
+You have access to three internal sources:
+1. Knowledge Base (including events, test links, flows, exact names, processes, and definitions).
+2. User Memory.
+3. Liked Conversation History.
+
+Your task: Determine if a WEB SEARCH is absolutely required.
+
+STRICT RULES:
+- If the query involves an event name, test link name, or any known entity that may exist in the Knowledge Base, answer **"No"**.
+- Only answer "Yes" if the query clearly cannot be answered using ANY internal source.
+- Be conservative: default to "No".
+
+Return only: Yes or No.
 
 Query: {query}
-Decision:"""
+
+Decision:
+"""
 )
+
 
 # ----------- INITIALIZATION -----------
 
