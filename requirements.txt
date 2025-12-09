@@ -18,3 +18,5 @@ unstructured
 python-docx
 lxml
 watchdog
+fastapi
+uvicorn

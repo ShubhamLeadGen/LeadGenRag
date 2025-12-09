@@ -1,18 +1,18 @@
-# Use an official Python runtime as a parent image
-FROM python:3.9-slim-buster
+# Use an official Python base image
+FROM python:3.10-slim
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Copy the requirements file and install dependencies
-COPY requirements.txt ./
+# Copy dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the container
+# Copy all project files
 COPY . .
 
-# Expose the port Streamlit runs on (default is 8501)
-EXPOSE 8501
+# Hugging Face Spaces require exposing port 7860
+EXPOSE 7860
 
-# Command to run the Streamlit app
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Streamlit must run on port 7860 on HF Spaces
+CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0"]
